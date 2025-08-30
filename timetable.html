@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Class Timetable</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" xintegrity="sha512-iecdLmaskl7CVvHGYR/PzT7p4B6W2y/f5m9aVlC4X2gT7G8lT5T5q7UeIeQ/z/l5F5b6W6W2P6W7A7M7O5f5V5aW8z" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FDFBF8;
+            color: #333;
+        }
+        .tab-active {
+            border-bottom-color: #D4A373;
+            color: #D4A373;
+            font-weight: 600;
+        }
+        .tooltip {
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .has-tooltip:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+        .chart-container {
+            position: relative;
+            margin: auto;
+            height: 40vh;
+            width: 100%;
+            max-width: 450px;
+            max-height: 450px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-fast {
+            animation: spin 0.6s linear infinite;
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container mx-auto p-4 sm:p-6 md:p-8 max-w-7xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-800">St. Joseph's Institute of Technology</h1>
+            <p class="text-lg text-gray-600">Department of CSE - II Year Timetable (2025-2026, Odd Semester)</p>
+        </header>
+
+        <main>
+            <div class="bg-white rounded-xl shadow-lg p-4 sm:p-6">
+                <div class="border-b border-gray-200 mb-6">
+                    <nav class="-mb-px flex flex-wrap justify-center gap-x-4 sm:gap-x-6 text-sm sm:text-base" aria-label="Tabs">
+                        <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 tab-active" data-tab="today">Today's Schedule</button>
+                        <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="full">Full Timetable</button>
+                        <button class="tab whitespace-nowrap py-4 px-1 border-b-2 font-medium border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="subjects">Subjects Overview</button>
+                    </nav>
+                </div>
+
+                <div id="tab-content">
+                    <div id="today" class="tab-pane">
+                        <p class="text-center text-gray-600 mb-6">This section provides a real-time overview of your schedule for today, highlighting the current and upcoming classes to help you stay on track.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                            <div id="current-class-container" class="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center relative"></div>
+                            <div id="next-class-container" class="bg-sky-50 border border-sky-200 rounded-lg p-6 text-center relative"></div>
+                        </div>
+                        <div id="today-timeline"></div>
+                    </div>
+                    
+                    <div id="full" class="tab-pane hidden">
+                        <p class="text-center text-gray-600 mb-6">Explore the complete weekly schedule. Hover over any class code in the grid to instantly see more details about the subject and the assigned faculty.</p>
+                        <div class="overflow-x-auto">
+                            <table id="full-timetable-table" class="min-w-full divide-y divide-gray-200 border border-gray-200 text-center text-xs sm:text-sm"></table>
+                        </div>
+                    </div>
+
+                    <div id="subjects" class="tab-pane hidden">
+                        <p class="text-center text-gray-600 mb-6">Here you can find a comprehensive list of all theoretical and practical subjects for this semester. Use the search bar to quickly filter subjects by name, code, or faculty.</p>
+                        <div class="mb-6">
+                            <input type="text" id="subject-search" placeholder="Search subjects, codes, or staff..." class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-400 focus:border-transparent">
+                        </div>
+                        <div id="subject-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-lg p-4 sm:p-6 mt-8">
+                <h2 class="text-2xl font-bold text-center text-gray-800 mb-4">Weekly Workload Distribution</h2>
+                <p class="text-center text-gray-600 mb-6">This chart visualizes the distribution of class hours across all your subjects for the week, giving you a clear picture of your academic workload at a glance.</p>
+                <div class="chart-container">
+                    <canvas id="workloadChart"></canvas>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const subjects = {
+            'MA4351': { name: 'Discrete Mathematics', staff: 'Dr.K.Sriram', hours: 7, type: 'Theory' },
+            'CS4351': { name: 'Digital Logic and Computer Organization', staff: 'Mrs.G. Kalingarani', hours: 6, type: 'Theory' },
+            'CS4301': { name: 'Data Structures and Algorithms-I', staff: 'Mrs.E.Ajitha', hours: 6, type: 'Theory' },
+            'CS4352': { name: 'Java Programming', staff: 'Mrs.V.C.Ranganayaki', hours: 6, type: 'Theory' },
+            'AD4352': { name: 'Data Analytics and Visualization', staff: 'Mrs.S.M.Keerthana', hours: 6, type: 'Theory' },
+            'CS4306': { name: 'Data Structures and Algorithms-I Lab', staff: 'Mrs.E.Ajitha, Mrs.S.Revathy, Mrs.M.Ramya', hours: 3, type: 'Practical' },
+            'CS4357': { name: 'Java Programming Lab', staff: 'Mrs.V.C.Ranganayaki, Dr.V.Sabaresan, Mrs.K.Sherin', hours: 3, type: 'Practical' },
+            'AD4357': { name: 'Data Analytics and Visualization Lab', staff: 'Mrs.S.M.Keerthana, Mrs.G.Smilarubavathy, Mrs.M.Sangeetha', hours: 3, type: 'Practical' },
+            'HS4310': { name: 'Professional Skills', staff: 'Dr.S.Narendran & Dr.A.Deepak Kumar', hours: 2, type: 'Practical' },
+            'SEERA': { name: 'SEERA', staff: 'Mrs.E.Ajitha, Mrs.S.M.Keerthana, Mrs.V.C.Ranganayaki, Mrs.G. Kalingarani', hours: 2, type: 'Practical' },
+            'LIB/SEM': { name: 'Library / Seminar', staff: 'Mrs.P.Hema / Mr.Rajasekar', hours: 1, type: 'Activity' },
+        };
+
+        const timetable = {
+            1: [
+                { start: "07:50", end: "08:40", code: "CS4351" }, { start: "08:40", end: "09:30", code: "CS4301" },
+                { start: "09:40", end: "11:00", code: "MA4351" }, { start: "11:00", end: "12:20", code: "CS4306" },
+                { start: "13:00", end: "13:50", code: "AD4352" }, { start: "13:50", end: "14:40", code: "LIB/SEM" }
+            ],
+            2: [
+                { start: "07:50", end: "08:40", code: "MA4351" }, { start: "08:40", end: "09:30", code: "AD4357" },
+                { start: "09:40", end: "11:00", code: "CS4352" }, { start: "11:00", end: "11:50", code: "AD4352" },
+                { start: "11:50", end: "12:40", code: "CS4351" }, { start: "12:40", end: "13:30", code: "CS4351" },
+                { start: "14:10", end: "15:00", code: "CS4301" }, { start: "15:00", end: "15:50", code: "CS4351" }
+            ],
+            3: [
+                { start: "07:50", end: "08:40", code: "MA4351" }, { start: "08:40", end: "09:30", code: "AD4352" },
+                { start: "09:40", end: "10:30", code: "MA4351" }, { start: "10:30", end: "12:10", code: "AD4352" },
+                { start: "12:10", end: "13:00", code: "CS4352" },
+                { start: "13:40", end: "14:30", code: "CS4351" }, { start: "14:30", end: "15:20", code: "CS4301" }
+            ],
+            4: [
+                { start: "07:50", end: "08:40", code: "CS4352" }, { start: "08:40", end: "09:30", code: "MA4351" },
+                { start: "09:40", end: "10:30", code: "CS4301" }, { start: "10:30", end: "11:20", code: "MA4351" },
+                { start: "11:20", end: "13:00", code: "HS4310" },
+                { start: "13:40", end: "14:30", code: "CS4301" }, { start: "14:30", end: "15:20", code: "CS4352" }
+            ],
+            5: [
+                { start: "07:50", end: "09:30", code: "AD4352" },
+                { start: "09:40", end: "11:20", code: "CS4357" }, { start: "11:20", end: "13:00", code: "AD4352" },
+                { start: "13:40", end: "14:30", code: "CS4301" }, { start: "14:30", end: "15:20", code: "SEERA" }
+            ],
+            0: [], 6: []
+        };
+        const fullTimetableGrid = [
+            ['DAYS', '1<br>7:50-8:40', '2<br>8:40-9:30', '3<br>9:40-10:20', '4<br>10:20-11:00', '5<br>11:00-11:40', '6<br>11:40-12:20', '7<br>12:20-1:00', '8<br>1:00-1:40', '9<br>1:40-2:20', '10<br>2:20-3:10'],
+            ['MON', 'CS4351', 'CS4301', {code: 'MA4351', span: 2, note: '(T)'}, null, {code: 'CS4306', span: 2}, null, {code: 'LUNCH', span: 1, isBreak: true}, 'AD4352', 'LIB/SEM'],
+            ['TUE', 'MA4351', 'AD4357', {code: 'CS4352', span: 2}, null, 'AD4352', 'CS4351', 'CS4351', {code: 'LUNCH', span: 1, isBreak: true}, 'CS4301', 'CS4351'],
+            ['WED', 'MA4351', 'AD4352', 'MA4351', {code: 'CS4352', span: 1}, 'AD4352', 'AD4352', 'CS4352', {code: 'LUNCH', span: 1, isBreak: true}, 'CS4351', 'CS4301'],
+            ['THU', 'CS4352', 'MA4351', 'CS4301', 'MA4351', {code: 'HS4310', span: 2}, null, {code: 'LUNCH', span: 1, isBreak: true}, 'CS4301', 'CS4352'],
+            ['FRI', {code: 'AD4352', span: 2}, null, {code: 'CS4357', span: 2}, null, {code: 'AD4352', span: 2}, null, {code: 'LUNCH', span: 1, isBreak: true}, 'CS4301', 'SEERA']
+        ];
+        
+        const apiKey = "";
+        const textApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+        const audioApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+
+        async function generateStudyGuide(subjectCode) {
+            const subject = subjects[subjectCode];
+            if (!subject) return "Subject details not found.";
+
+            const prompt = `Act as a helpful study assistant. Create a detailed study guide for the college subject "${subject.name}" with subject code "${subjectCode}". The guide should be structured with sections for:
+            - Key Concepts (bullet points)
+            - Recommended Study Strategies (practical tips)
+            - Potential Exam Questions (examples for practice)
+            - A brief Summary of the course's purpose.
+            Use clear and concise language.`;
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: "You are a helpful and knowledgeable study assistant." }]
+                }
+            };
+
+            const guideContainer = document.getElementById(`guide-${subjectCode}`);
+            const guideButton = document.querySelector(`[data-code="${subjectCode}"]`);
+            guideButton.innerHTML = `<i class="fa-solid fa-spinner animate-spin-fast mr-2"></i> Generating...`;
+            guideButton.disabled = true;
+
+            try {
+                const response = await fetch(textApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                guideContainer.innerHTML = text ? `<div class="p-4 bg-gray-100 rounded-lg mt-4 text-sm whitespace-pre-wrap">${text}</div>` : `<p class="text-red-500 mt-2">Error generating study guide. Please try again.</p>`;
+            } catch (error) {
+                guideContainer.innerHTML = `<p class="text-red-500 mt-2">Network error. Please try again.</p>`;
+            } finally {
+                guideButton.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-2"></i>Generate Study Guide ✨`;
+                guideButton.disabled = false;
+            }
+        }
+        
+        async function pcmToWav(pcmData, sampleRate) {
+            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+            const view = new DataView(buffer);
+            let offset = 0;
+
+            function writeString(str) { for (let i = 0; i < str.length; i++) { view.setUint8(offset + i, str.charCodeAt(i)); } offset += str.length; }
+            function writeUint32(val) { view.setUint32(offset, val, true); offset += 4; }
+            function writeUint16(val) { view.setUint16(offset, val, true); offset += 2; }
+
+            writeString('RIFF');
+            writeUint32(36 + pcmData.length * 2);
+            writeString('WAVE');
+            writeString('fmt ');
+            writeUint32(16);
+            writeUint16(1);
+            writeUint16(1);
+            writeUint32(sampleRate);
+            writeUint32(sampleRate * 2);
+            writeUint16(2);
+            writeUint16(16);
+            writeString('data');
+            writeUint32(pcmData.length * 2);
+
+            for (let i = 0; i < pcmData.length; i++) {
+                view.setInt16(offset, pcmData[i], true);
+                offset += 2;
+            }
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        async function speakText(text, button) {
+            if (button.dataset.playing === 'true') {
+                button.innerHTML = `<i class="fa-solid fa-volume-high"></i>`;
+                button.dataset.playing = 'false';
+                if (window.currentAudio) {
+                    window.currentAudio.pause();
+                    window.currentAudio.currentTime = 0;
+                }
+                return;
+            }
+
+            button.dataset.playing = 'true';
+            button.innerHTML = `<i class="fa-solid fa-spinner animate-spin-fast"></i>`;
+
+            const payload = {
+                contents: [{ parts: [{ text: text }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: {
+                        voiceConfig: {
+                            prebuiltVoiceConfig: { voiceName: "Fenrir" }
+                        }
+                    }
+                },
+                model: "gemini-2.5-flash-preview-tts"
+            };
+
+            try {
+                const response = await fetch(audioApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                    const pcmData = Uint8Array.from(atob(audioData), c => c.charCodeAt(0));
+                    const pcm16 = new Int16Array(pcmData.buffer);
+                    const wavBlob = await pcmToWav(pcm16, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    const audio = new Audio(audioUrl);
+                    window.currentAudio = audio;
+
+                    audio.onplay = () => button.innerHTML = `<i class="fa-solid fa-volume-xmark"></i>`;
+                    audio.onended = () => {
+                        button.innerHTML = `<i class="fa-solid fa-volume-high"></i>`;
+                        button.dataset.playing = 'false';
+                    };
+                    audio.play();
+                } else {
+                    button.innerHTML = `<i class="fa-solid fa-volume-high text-red-500"></i>`;
+                }
+            } catch (error) {
+                button.innerHTML = `<i class="fa-solid fa-volume-high text-red-500"></i>`;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('.tab');
+            const tabPanes = document.querySelectorAll('.tab-pane');
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('tab-active'));
+                    tab.classList.add('tab-active');
+
+                    tabPanes.forEach(pane => {
+                        if (pane.id === tab.dataset.tab) {
+                            pane.classList.remove('hidden');
+                        } else {
+                            pane.classList.add('hidden');
+                        }
+                    });
+                });
+            });
+
+            function renderTodaySchedule() {
+                const now = new Date();
+                const dayOfWeek = now.getDay();
+                const currentTime = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+                
+                const todayClasses = timetable[dayOfWeek] ? [...timetable[dayOfWeek]].sort((a,b) => a.start.localeCompare(b.start)) : [];
+
+                let currentClass = null;
+                let nextClass = null;
+
+                for (const cls of todayClasses) {
+                    if (currentTime >= cls.start && currentTime < cls.end) {
+                        currentClass = cls;
+                    }
+                    if (currentTime < cls.start && !nextClass) {
+                        nextClass = cls;
+                    }
+                }
+                
+                const currentClassContainer = document.getElementById('current-class-container');
+                const nextClassContainer = document.getElementById('next-class-container');
+
+                if (currentClass) {
+                    const subject = subjects[currentClass.code];
+                    const textToSpeak = `Your current class is ${subject.name} with ${subject.staff}. It ends at ${currentClass.end}.`;
+                    currentClassContainer.innerHTML = `
+                        <h3 class="font-semibold text-amber-800 mb-2">Current Class (Now)</h3>
+                        <p class="text-xl font-bold text-gray-800">${subject.name} (${currentClass.code})</p>
+                        <p class="text-gray-600">${subject.staff}</p>
+                        <p class="text-sm text-gray-500 mt-2">Ends at ${currentClass.end}</p>
+                        <button onclick="speakText('${textToSpeak}', this)" class="absolute top-2 right-2 p-2 rounded-full bg-amber-200 text-amber-800 hover:bg-amber-300 transition-colors duration-200"><i class="fa-solid fa-volume-high"></i></button>`;
+                } else {
+                    const textToSpeak = `You are currently in a break.`;
+                    currentClassContainer.innerHTML = `
+                        <h3 class="font-semibold text-gray-700 mb-2">No Active Class</h3>
+                        <p class="text-lg text-gray-500">You are currently in a break.</p>
+                        <button onclick="speakText('${textToSpeak}', this)" class="absolute top-2 right-2 p-2 rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition-colors duration-200"><i class="fa-solid fa-volume-high"></i></button>`;
+                }
+
+                if (nextClass) {
+                    const subject = subjects[nextClass.code];
+                    const textToSpeak = `Your next class is ${subject.name} with ${subject.staff}. It starts at ${nextClass.start}.`;
+                    nextClassContainer.innerHTML = `
+                        <h3 class="font-semibold text-sky-800 mb-2">Next Class</h3>
+                        <p class="text-xl font-bold text-gray-800">${subject.name} (${nextClass.code})</p>
+                        <p class="text-gray-600">${subject.staff}</p>
+                        <p class="text-sm text-gray-500 mt-2">Starts at ${nextClass.start}</p>
+                        <button onclick="speakText('${textToSpeak}', this)" class="absolute top-2 right-2 p-2 rounded-full bg-sky-200 text-sky-800 hover:bg-sky-300 transition-colors duration-200"><i class="fa-solid fa-volume-high"></i></button>`;
+                } else {
+                    const textToSpeak = `You are done for the day.`;
+                    nextClassContainer.innerHTML = `
+                        <h3 class="font-semibold text-gray-700 mb-2">No More Classes</h3>
+                        <p class="text-lg text-gray-500">You are done for the day!</p>
+                        <button onclick="speakText('${textToSpeak}', this)" class="absolute top-2 right-2 p-2 rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition-colors duration-200"><i class="fa-solid fa-volume-high"></i></button>`;
+                }
+                
+                const timelineContainer = document.getElementById('today-timeline');
+                if (todayClasses.length > 0) {
+                     timelineContainer.innerHTML = `<h3 class="text-xl font-bold text-center text-gray-800 mb-4">Today's Timeline</h3>` + todayClasses.map(cls => {
+                        const subject = subjects[cls.code];
+                        const isActive = (currentTime >= cls.start && currentTime < cls.end);
+                        const textToSpeak = `${subject.name} from ${cls.start} to ${cls.end}. Staff is ${subject.staff}.`;
+                        return `
+                        <div class="flex items-center mb-4 relative">
+                            <div class="flex flex-col items-center mr-4">
+                                <div class="w-4 h-4 rounded-full ${isActive ? 'bg-amber-500 animate-pulse' : 'bg-gray-300'}"></div>
+                                <div class="w-0.5 h-12 bg-gray-300"></div>
+                            </div>
+                            <div class="w-24 font-medium text-gray-600">${cls.start} - ${cls.end}</div>
+                            <div class="flex-1 p-3 rounded-lg ${isActive ? 'bg-amber-100 border border-amber-200' : 'bg-gray-50'}">
+                                <p class="font-semibold text-gray-800">${subject.name} (${cls.code})</p>
+                                <p class="text-sm text-gray-500">${subject.staff}</p>
+                            </div>
+                            <button onclick="speakText('${textToSpeak}', this)" class="absolute top-2 right-2 p-2 rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition-colors duration-200"><i class="fa-solid fa-volume-high"></i></button>
+                        </div>`;
+                    }).join('');
+                } else {
+                    timelineContainer.innerHTML = `<div class="text-center p-6 bg-gray-50 rounded-lg"><p class="text-lg text-gray-600">No classes scheduled for today. Enjoy your day off!</p></div>`;
+                }
+            }
+
+            function renderFullTimetable() {
+                const table = document.getElementById('full-timetable-table');
+                let html = '<thead><tr class="bg-gray-50">';
+                fullTimetableGrid[0].forEach(header => html += `<th class="py-3 px-2 font-semibold text-gray-600 tracking-wider">${header}</th>`);
+                html += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+                
+                fullTimetableGrid.slice(1).forEach(row => {
+                    html += '<tr>';
+                    html += `<td class="py-3 px-2 font-bold bg-gray-50 text-gray-700">${row[0]}</td>`;
+                    for(let i = 1; i < row.length; i++) {
+                        const cell = row[i];
+                        if (cell === null) continue;
+
+                        if (typeof cell === 'string') {
+                            const subject = subjects[cell];
+                            if (subject) {
+                                html += `<td class="py-3 px-2 relative has-tooltip cursor-pointer hover:bg-amber-50">
+                                    <span class="font-medium text-gray-800">${cell}</span>
+                                    <div class="tooltip absolute z-10 w-64 p-3 -mt-20 ml-4 text-sm text-left text-white bg-gray-800 rounded-lg shadow-lg">
+                                        <p class="font-bold">${subject.name}</p>
+                                        <p>${subject.staff}</p>
+                                    </div>
+                                </td>`;
+                            } else {
+                                html += `<td class="py-3 px-2">${cell}</td>`;
+                            }
+                        } else if (typeof cell === 'object') {
+                             if(cell.isBreak){
+                                 html += `<td colspan="${cell.span}" class="py-3 px-2 bg-gray-100 text-gray-500 font-medium tracking-widest align-middle">${cell.code}</td>`;
+                             } else {
+                                 const subject = subjects[cell.code];
+                                 html += `<td colspan="${cell.span}" class="py-3 px-2 relative has-tooltip cursor-pointer hover:bg-amber-50">
+                                     <span class="font-medium text-gray-800">${cell.code} ${cell.note || ''}</span>
+                                     <div class="tooltip absolute z-10 w-64 p-3 -mt-20 ml-4 text-sm text-left text-white bg-gray-800 rounded-lg shadow-lg">
+                                         <p class="font-bold">${subject.name}</p>
+                                         <p>${subject.staff}</p>
+                                     </div>
+                                 </td>`;
+                             }
+                        }
+                    }
+                    html += '</tr>';
+                });
+
+                html += '</tbody>';
+                table.innerHTML = html;
+            }
+
+            function renderSubjects(filter = '') {
+                const container = document.getElementById('subject-list');
+                const lowerFilter = filter.toLowerCase();
+                let html = '';
+
+                Object.entries(subjects).forEach(([code, subject]) => {
+                    const content = `${code} ${subject.name} ${subject.staff}`.toLowerCase();
+                    if(content.includes(lowerFilter)) {
+                        html += `
+                        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <div class="flex justify-between items-start">
+                                <h4 class="font-bold text-lg text-gray-800">${subject.name}</h4>
+                                <span class="text-xs font-semibold px-2 py-1 rounded-full ${subject.type === 'Theory' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}">${subject.type}</span>
+                            </div>
+                            <p class="text-sm font-medium text-amber-700">${code}</p>
+                            <p class="text-gray-600 mt-2">${subject.staff}</p>
+                            <p class="text-xs text-gray-500 mt-1">${subject.hours} hours/week</p>
+                            <button onclick="generateStudyGuide('${code}')" data-code="${code}" class="w-full mt-4 flex items-center justify-center rounded-md bg-sky-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 transition-colors duration-200">
+                                <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>Generate Study Guide ✨
+                            </button>
+                            <div id="guide-${code}" class="mt-2 text-gray-700"></div>
+                        </div>`;
+                    }
+                });
+                
+                if(!html) {
+                    html = `<p class="text-center text-gray-500 md:col-span-2 lg:col-span-3">No subjects found matching your search.</p>`;
+                }
+                container.innerHTML = html;
+            }
+
+            document.getElementById('subject-search').addEventListener('input', (e) => {
+                renderSubjects(e.target.value);
+            });
+            
+            function renderWorkloadChart() {
+                const ctx = document.getElementById('workloadChart').getContext('2d');
+                const labels = Object.values(subjects).map(s => s.name);
+                const data = Object.values(subjects).map(s => s.hours);
+                const backgroundColors = [
+                    '#fde68a', '#a5f3fc', '#d8b4fe', '#fecaca', '#bbf7d0',
+                    '#fed7aa', '#c7d2fe', '#e9d5ff', '#fbcfe8', '#a7f3d0', '#fef08a'
+                ];
+
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Hours per Week',
+                            data: data,
+                            backgroundColor: backgroundColors,
+                            borderColor: '#FDFBF8',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    boxWidth: 12,
+                                    padding: 15,
+                                    font: {
+                                        size: 10
+                                    }
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed !== null) {
+                                            label += context.parsed + ' hours';
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            renderTodaySchedule();
+            setInterval(renderTodaySchedule, 60000); 
+            renderFullTimetable();
+            renderSubjects();
+            renderWorkloadChart();
+        });
+    </script>
+</body>
+</html>
